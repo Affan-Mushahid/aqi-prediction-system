@@ -63,6 +63,11 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 
     if 'datetime' in df.columns:
         df['datetime'] = pd.to_datetime(df['datetime'])
+        # ensure timezone-aware (UTC)
+        if df['datetime'].dt.tz is None:
+            df['datetime'] = df['datetime'].dt.tz_localize('UTC')
+        else:
+            df['datetime'] = df['datetime'].dt.tz_convert('UTC')
 
     # Time-based features
     if 'datetime' in df.columns:

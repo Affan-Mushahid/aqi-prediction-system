@@ -2,6 +2,7 @@ import pickle
 import pandas as pd
 import numpy as np
 from typing import Optional
+from datetime import timezone
 from src.utils.db_utils import fetch_features, store_model_pickle
 from src.utils.process_data import prepare_data
 
@@ -42,11 +43,18 @@ def training_pipeline() -> Optional[object]:
         df = df.rename(columns={'timestamp': 'datetime'})
     df['datetime'] = pd.to_datetime(df['datetime'])
 
-    # remove future rows and sort ascending
-    now = pd.Timestamp.now()
+    # Normalize dataframe datetimes to timezone-aware UTC
+    if df['datetime'].dt.tz is None:
+        df['datetime'] = df['datetime'].dt.tz_localize('UTC')
+    else:
+        df['datetime'] = df['datetime'].dt.tz_convert('UTC')
+
+    # remove future rows and sort ascending using UTC now
+    now = pd.Timestamp.now(tz=timezone.utc)
     df = df[df['datetime'] < now].sort_values('datetime', ascending=True).reset_index(drop=True)
 
     if df.empty:
+        print("No historical rows after filtering out future timestamps; nothing to train.")
         return None
 
     # Create target
@@ -136,6 +144,7 @@ def training_pipeline() -> Optional[object]:
         pass
 
     if not model_metrics:
+        print("No models were successfully trained; aborting and returning None.")
         return None
 
     metrics_df = pd.DataFrame(model_metrics)

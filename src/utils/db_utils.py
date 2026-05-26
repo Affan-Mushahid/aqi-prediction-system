@@ -3,7 +3,7 @@ import os
 import pandas as pd
 from pymongo import MongoClient
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Load environment variables from .env (if present)
 load_dotenv()
@@ -39,13 +39,44 @@ def store_engineered_features(
 
 	# Convert timestamps and sanitize NaNs
 	df = df.copy()
+	# normalize timestamp column to datetimes and ensure UTC
 	df[timestamp_col] = pd.to_datetime(df[timestamp_col])
+	# Convert series to UTC-aware, then make native python datetimes naive in UTC for storage
+	try:
+		if df[timestamp_col].dt.tz is None:
+			# assume naive timestamps are already in UTC
+			df[timestamp_col] = df[timestamp_col].dt.tz_localize('UTC')
+		else:
+			df[timestamp_col] = df[timestamp_col].dt.tz_convert('UTC')
+		# convert to native python datetimes (naive, UTC) for MongoDB
+		def _to_naive(x):
+			if pd.isna(x):
+				return x
+			py = x.to_pydatetime()
+			if getattr(py, 'tzinfo', None) is not None:
+				return py.astimezone(timezone.utc).replace(tzinfo=None)
+			return py
+		df[timestamp_col] = df[timestamp_col].apply(_to_naive)
+	except Exception:
+		# mixed types or other issues: coerce per-value
+		def _ensure_utc_naive(val):
+			if pd.isna(val):
+				return val
+			v = pd.to_datetime(val)
+			if getattr(v, 'tzinfo', None) is None:
+				# assume naive is UTC
+				return v.replace(tzinfo=None)
+			return v.astimezone(timezone.utc).replace(tzinfo=None)
+		df[timestamp_col] = df[timestamp_col].apply(_ensure_utc_naive)
+
+	# sanitize NaNs -> None for MongoDB
 	df = df.where(pd.notnull(df), None)
 
 	# Build documents
 	mongo_documents = []
 	for _, row in df.iterrows():
 		ts = row[timestamp_col]
+		# ts should already be a native python datetime (naive, UTC) from earlier
 		if hasattr(ts, "to_pydatetime"):
 			ts = ts.to_pydatetime()
 
@@ -81,7 +112,9 @@ def fetch_features(days=None, collection_name: str = "features", timestamp_field
 	if days is not None:
 		if not isinstance(days, int) or days < 0:
 			raise ValueError("days must be a non-negative integer or None")
-		cutoff = datetime.now() - timedelta(days=days)
+		# build a naive UTC cutoff (Mongo stores naive UTC datetimes)
+		cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+		cutoff = cutoff.replace(tzinfo=None)
 		query = {timestamp_field: {"$gte": cutoff}}
 
 	# Fetch documents sorted by timestamp descending
@@ -103,6 +136,24 @@ def fetch_features(days=None, collection_name: str = "features", timestamp_field
 		records.append(rec)
 
 	df = pd.DataFrame.from_records(records)
+	# Normalize fetched timestamps to timezone-aware UTC datetimes for callers
+	if not df.empty and timestamp_field in df.columns:
+		df[timestamp_field] = pd.to_datetime(df[timestamp_field])
+		try:
+			if df[timestamp_field].dt.tz is None:
+				df[timestamp_field] = df[timestamp_field].dt.tz_localize('UTC')
+			else:
+				df[timestamp_field] = df[timestamp_field].dt.tz_convert('UTC')
+		except Exception:
+			# per-value fallback
+			def _ensure_utc(val):
+				if pd.isna(val):
+					return val
+				v = pd.to_datetime(val)
+				if getattr(v, 'tzinfo', None) is None:
+					return v.tz_localize('UTC') if hasattr(v, 'tz_localize') else v.replace(tzinfo=timezone.utc)
+				return v.tz_convert('UTC') if hasattr(v, 'tz_convert') else v.astimezone(timezone.utc)
+			df[timestamp_field] = df[timestamp_field].apply(_ensure_utc)
 	return df
 
 
@@ -128,7 +179,7 @@ def store_model_pickle(
 		raise ValueError("model_name must be a non-empty string")
 
 	if not filename:
-		filename = f"{model_name}_{datetime.now().strftime('%Y%m%dT%H%M%SZ')}.pkl"
+		filename = f"{model_name}_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.pkl"
 
 	# Try to infer model type/class from the pickle
 	import pickle
@@ -143,7 +194,7 @@ def store_model_pickle(
 	# store both logical name and inferred type
 	meta["model_name"] = model_name
 	meta.setdefault("model_type", inferred_type or "unknown")
-	meta.setdefault("uploaded_at", datetime.now())
+	meta.setdefault("uploaded_at", datetime.now(timezone.utc))
 
 	# Read env and connect (use sensible defaults when env vars are missing)
 	mongo_uri = os.environ.get("MONGO_URI", "mongodb://localhost:27017/")

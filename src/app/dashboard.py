@@ -7,7 +7,7 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import shap
 import matplotlib.pyplot as plt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 st.set_page_config(page_title="AQI Prediction Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
@@ -53,7 +53,7 @@ if st.session_state.predictions_data is None:
                 response = requests.get(f"{API_URL}/api/predict", timeout=30)
                 response.raise_for_status()
                 st.session_state.predictions_data = response.json()
-                st.session_state.last_update = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                st.session_state.last_update = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
             except requests.exceptions.ConnectionError:
                 st.error("❌ Cannot connect to prediction API. Make sure the FastAPI server is running on http://localhost:8000")
                 st.session_state.predictions_data = None
