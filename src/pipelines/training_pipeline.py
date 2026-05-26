@@ -30,16 +30,14 @@ def training_pipeline() -> Optional[object]:
 
     Returns the GridFS file id of the stored model on success, or None on failure/no-op.
     """
-    # Fetch all feature rows
-    try:
-        df = fetch_features(days=None, collection_name='features', timestamp_field='timestamp')
-    except Exception:
-        return None
+
+    df = fetch_features(days=None, collection_name='features', timestamp_field='timestamp')
+
 
     if df.empty:
-        return None
+        raise ValueError("Database has no features to train model on")
 
-    # Normalize timestamp column to `datetime`
+
     if 'timestamp' in df.columns:
         df = df.rename(columns={'timestamp': 'datetime'})
     df['datetime'] = pd.to_datetime(df['datetime'])
@@ -51,15 +49,15 @@ def training_pipeline() -> Optional[object]:
     if df.empty:
         return None
 
-    # Create target: next hour us_aqi
+    # Create target
     if 'us_aqi' not in df.columns:
-        return None
+        raise ValueError("Critical features are missing from feature store. Check for data corruption")
     df['target'] = df['us_aqi'].shift(-1)
     df = df.ffill()
     df = df.dropna()
     df = df.bfill()
 
-    # Train-test split by time (80% train)
+    # Train-test split
     n = len(df)
     split_idx = int(n * 0.8)
 
@@ -104,7 +102,7 @@ def training_pipeline() -> Optional[object]:
     except Exception:
         pass
 
-    # 3. XGBoost (if available)
+    # 3. XGBoost
     if XGBRegressor is not None:
         try:
             xgb = XGBRegressor(n_estimators=200, max_depth=3, learning_rate=0.05,
@@ -148,7 +146,7 @@ def training_pipeline() -> Optional[object]:
     best_name = best_row['name']
     best_model = models.get(best_name)
     if best_model is None:
-        return None
+        raise ValueError("Can't select best model. No model to select")
 
     # Prepare metadata: include chosen metrics and all models' metrics
     all_metrics = metrics_df.to_dict(orient='records')
@@ -163,13 +161,13 @@ def training_pipeline() -> Optional[object]:
     payload = {'model': best_model, 'scaler': scaler, 'features': X.columns.tolist()}
     try:
         model_bytes = pickle.dumps(payload)
-    except Exception:
-        return None
+    except Exception as e:
+        raise RuntimeError("Error while trying to pickle best model") from e
 
     try:
         file_id = store_model_pickle(model_bytes=model_bytes, model_name=best_name, metadata=metadata)
-    except Exception:
-        return None
+    except Exception as e:
+        raise RuntimeError("Error while trying to store best model in DB") from e
 
     return file_id
 

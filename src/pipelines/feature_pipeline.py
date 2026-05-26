@@ -8,24 +8,18 @@ from src.utils.db_utils import fetch_features, store_engineered_features
 
 
 def fetch_hourly_features() -> Optional[int]:
-    # Fetch latest record from DB (use 'timestamp' because store_engineered_features
-    # writes the field as 'timestamp')
-    try:
-        latest_df = fetch_features(days=14, collection_name='features', timestamp_field='timestamp')
-    except Exception as e:
-        return 0
+    latest_df = fetch_features(days=14, collection_name='features', timestamp_field='timestamp')
 
     if latest_df.empty:
         # nothing to compare against — exit quietly
-        return 0
+        raise ValueError("Run Backfill features first")
 
     latest_row = latest_df.iloc[0]
-    # normalize latest timestamp column name to `datetime`
     latest_ts = pd.to_datetime(latest_row.get('timestamp'))
     if pd.isna(latest_ts):
-        return 0
+        raise ValueError("Could not fetch latest record's date for comparing. Check for corruption")
 
-    # Build API window: last 7 days up to current hour - 1
+    # Fetch API: last 7 days up to current hour - 1
     now_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
     end_dt = now_hour - timedelta(hours=1)
     start_dt = (end_dt - timedelta(days=7)).date()
@@ -33,7 +27,6 @@ def fetch_hourly_features() -> Optional[int]:
     if start_dt is None or end_dt is None or start_dt > end_dt.date():
         return 0
 
-    # Prepare feature lists (same as backfill)
     features = [
         'pm2_5', 'pm10', 'carbon_monoxide', 'carbon_dioxide',
         'nitrogen_dioxide', 'sulphur_dioxide', 'ozone', 'dust', 'uv_index'
@@ -42,7 +35,6 @@ def fetch_hourly_features() -> Optional[int]:
 
     latitude, longitude = 24.8607, 67.0011
 
-    # AQI: last 14 days (using air-quality API)
     aq_params = {
         'latitude': latitude,
         'longitude': longitude,
@@ -56,7 +48,8 @@ def fetch_hourly_features() -> Optional[int]:
         resp = requests.get(aq_url, params=aq_params)
         resp.raise_for_status()
         aq_data = resp.json()
-    except Exception:
+    except Exception as e:
+        print("Open-Meteo API: AQI API is down.", e)
         return 0
 
     times = aq_data.get('hourly', {}).get('time')
@@ -75,7 +68,6 @@ def fetch_hourly_features() -> Optional[int]:
         return 0
 
 
-    # Weather: use forecast API only (no archive)
     weather_params = {
         'latitude': latitude,
         'longitude': longitude,
@@ -90,7 +82,7 @@ def fetch_hourly_features() -> Optional[int]:
         resp.raise_for_status()
         weather = resp.json()
     except Exception as e:
-        print(e)
+        print("Open-Meteo API: Weather API is down.", e)
         return 0
 
     wf_times = weather.get('hourly', {}).get('time')
@@ -118,13 +110,10 @@ def fetch_hourly_features() -> Optional[int]:
     if merged.empty:
         return 0
 
-    # Run full preparation on merged data
-    try:
-        prepared = prepare_data(merged)
-    except Exception:
-        return 0
 
-    # Normalize latest DB timestamp field name and ensure datetime dtype
+    prepared = prepare_data(merged)
+
+
     latest_df_norm = latest_df.copy()
     if 'timestamp' in latest_df_norm.columns:
         latest_df_norm = latest_df_norm.rename(columns={'timestamp': 'datetime'})
@@ -155,11 +144,7 @@ def fetch_hourly_features() -> Optional[int]:
         if equal:
             return 0
 
-    # If we reach here, none of the new rows are identical to latest DB row — store them
-    try:
-        inserted = store_engineered_features(new_rows)
-    except Exception:
-        return 0
+    inserted = store_engineered_features(new_rows)
 
     return inserted
 
