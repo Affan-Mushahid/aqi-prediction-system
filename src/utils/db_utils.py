@@ -25,8 +25,8 @@ def store_engineered_features(
 		raise TypeError("df must be a pandas DataFrame")
 
 	# Read env and connect
-	mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
-	db_name = os.getenv("DB_NAME", "ml_platform")
+	mongo_uri = os.environ["MONGO_URI"]
+	db_name = os.environ["DB_NAME"]
 	client = MongoClient(mongo_uri)
 	db = client[db_name]
 	feature_collection = db[collection_name]
@@ -69,9 +69,9 @@ def fetch_features(days=None, collection_name: str = "features", timestamp_field
 	`timestamp` column and the flattened feature columns.
 	"""
 
-	# Read env and connect
-	mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
-	db_name = os.getenv("DB_NAME", "ml_platform")
+	# Read env and connect (use sensible defaults when env vars are missing)
+	mongo_uri = os.environ.get("MONGO_URI", "mongodb://localhost:27017/")
+	db_name = os.environ.get("DB_NAME", "ml_platform")
 	client = MongoClient(mongo_uri)
 	db = client[db_name]
 	feature_collection = db[collection_name]
@@ -104,4 +104,154 @@ def fetch_features(days=None, collection_name: str = "features", timestamp_field
 
 	df = pd.DataFrame.from_records(records)
 	return df
+
+
+def store_model_pickle(
+	model_bytes: bytes,
+	model_name: str,
+	metadata: dict = None,
+	filename: str = None,
+	bucket_name: str = "models",
+) -> object:
+	"""Store a pickle (as bytes) into GridFS and return the file id.
+
+	`model_bytes` should be bytes produced by `pickle.dumps(model)`.
+	`model_name` is a required identifier used to override previous models
+	with the same name. `filename` is optional; if omitted a timestamped
+	name will be used.
+	"""
+
+	if not isinstance(model_bytes, (bytes, bytearray)):
+		raise TypeError("model_bytes must be bytes or bytearray")
+
+	if not model_name or not isinstance(model_name, str):
+		raise ValueError("model_name must be a non-empty string")
+
+	if not filename:
+		filename = f"{model_name}_{datetime.now().strftime('%Y%m%dT%H%M%SZ')}.pkl"
+
+	# Try to infer model type/class from the pickle
+	import pickle
+	inferred_type = None
+	try:
+		obj = pickle.loads(model_bytes)
+		inferred_type = obj.__class__.__name__
+	except Exception:
+		inferred_type = None
+
+	meta = dict(metadata) if metadata else {}
+	# store both logical name and inferred type
+	meta["model_name"] = model_name
+	meta.setdefault("model_type", inferred_type or "unknown")
+	meta.setdefault("uploaded_at", datetime.now())
+
+	# Read env and connect (use sensible defaults when env vars are missing)
+	mongo_uri = os.environ.get("MONGO_URI", "mongodb://localhost:27017/")
+	db_name = os.environ.get("DB_NAME", "ml_platform")
+	client = MongoClient(mongo_uri)
+	db = client[db_name]
+
+	# Use GridFS with the specified bucket/collection prefix
+	import gridfs
+	fs = gridfs.GridFS(db, collection=bucket_name)
+
+	# Remove all existing models in this bucket so the registry holds only one model.
+	try:
+		files_coll = db[f"{bucket_name}.files"]
+		existing = list(files_coll.find({}))
+		for ef in existing:
+			try:
+				fs.delete(ef["_id"])
+			except Exception:
+				pass
+	except Exception:
+		# If deletion fails, proceed to store the new model anyway.
+		pass
+
+	file_id = fs.put(model_bytes, filename=filename, metadata=meta)
+	return file_id
+
+
+def load_latest_model(bucket_name: str = "models"):
+	"""Retrieve the latest model from the registry and return a tuple
+	`(model_object, metadata)`.
+
+	Ignores `model_name` and simply returns the most recently uploaded
+	file from the specified GridFS bucket. Returns `(None, None)` if no
+	model is found. If the file is present but unpickling fails, the
+	metadata will still be returned alongside `None` for the model.
+	"""
+	# Read env and connect (use sensible defaults when env vars are missing)
+	mongo_uri = os.environ.get("MONGO_URI", "mongodb://localhost:27017/")
+	db_name = os.environ.get("DB_NAME", "ml_platform")
+	client = MongoClient(mongo_uri)
+	db = client[db_name]
+
+	import gridfs
+	fs = gridfs.GridFS(db, collection=bucket_name)
+
+	files_coll = db[f"{bucket_name}.files"]
+	# Find the latest file by uploadDate (no model_name filter)
+	doc = files_coll.find_one({}, sort=[("uploadDate", -1)])
+	if not doc:
+		return None, None
+
+	metadata = doc.get("metadata", {})
+	file_id = doc["_id"]
+	try:
+		raw = fs.get(file_id).read()
+		import pickle
+		return pickle.loads(raw), metadata
+	except Exception:
+		return None, metadata
+
+
+def clear_database(collection_name: str = "features", bucket_name: str = "models", drop_db: bool = False) -> dict:
+	"""Clear all engineered features and model registry files from the database.
+
+	This will delete all documents from the specified `collection_name` and
+	remove all files stored in the specified GridFS `bucket_name`. If
+	`drop_db` is True the entire database will be dropped after removals.
+
+	Returns a dict with counts: {"features_deleted": int, "models_deleted": int}.
+	"""
+	# Read env and connect (use sensible defaults when env vars are missing)
+	mongo_uri = os.environ.get("MONGO_URI", "mongodb://localhost:27017/")
+	db_name = os.environ.get("DB_NAME", "ml_platform")
+	client = MongoClient(mongo_uri)
+	db = client[db_name]
+
+	# Clear feature documents
+	feature_collection = db[collection_name]
+	try:
+		res = feature_collection.delete_many({})
+		features_deleted = getattr(res, "deleted_count", 0)
+	except Exception:
+		features_deleted = 0
+
+	# Clear GridFS model files
+	import gridfs
+	fs = gridfs.GridFS(db, collection=bucket_name)
+	files_coll = db[f"{bucket_name}.files"]
+	models_deleted = 0
+	try:
+		existing = list(files_coll.find({}))
+		for ef in existing:
+			try:
+				fs.delete(ef["_id"])
+				models_deleted += 1
+			except Exception:
+				# ignore deletion errors for individual files
+				pass
+	except Exception:
+		models_deleted = 0
+
+	# Optionally drop the entire database
+	if drop_db:
+		try:
+			client.drop_database(db_name)
+		except Exception:
+			pass
+
+	return {"features_deleted": features_deleted, "models_deleted": models_deleted}
 
