@@ -2,8 +2,8 @@ name: Feature pipeline
 
 on:
   schedule:
-    # Run at the top of every hour
-    - cron: '0 * * * *'
+    # Run at the 17 minutes mark every hour
+    - cron: '17 * * * *'
   workflow_dispatch:
 
 concurrency:
@@ -21,9 +21,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5 # Updated to v5
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.12'     # Simplified versioning
+          python-version: '3.12'
           cache: 'pip'
 
       - name: Install dependencies
