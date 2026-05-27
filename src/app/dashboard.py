@@ -9,15 +9,15 @@ import shap
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta, timezone
 import os
+from dotenv import load_dotenv
 import time
 
 st.set_page_config(page_title="AQI Prediction Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
 st.title("🌍 Air Quality Index (AQI) Prediction Dashboard")
-
+load_dotenv()
 # API URL - Fetches from environment variables, defaults to localhost for local testing
 API_URL = os.getenv("API_URL", "http://localhost:8000")
-
 # Color mapping for categories
 CATEGORY_COLORS = {
     "Good": "#1f77b4",
