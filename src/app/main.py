@@ -6,7 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import numpy as np
 from src.utils.db_utils import fetch_features, load_latest_model
-from src.utils.process_data import prepare_data
 
 app = FastAPI(title="AQI Prediction API")
 

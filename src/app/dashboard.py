@@ -9,6 +9,7 @@ import shap
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta, timezone
 import os
+import time
 
 st.set_page_config(page_title="AQI Prediction Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
@@ -49,17 +50,38 @@ status_placeholder = st.empty()
 # Fetch predictions on button click
 if st.session_state.predictions_data is None:
     with status_placeholder.container():
-        with st.spinner("📊 Loading AQI predictions..."):
-            try:
-                response = requests.get(f"{API_URL}/api/predict", timeout=180)
-                response.raise_for_status()
-                st.session_state.predictions_data = response.json()
-                st.session_state.last_update = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-            except requests.exceptions.ConnectionError:
-                st.error("❌ Cannot connect to prediction API. Make sure the FastAPI server is running")
-                st.session_state.predictions_data = None
-            except Exception as e:
-                st.error(f"❌ Error fetching predictions: {str(e)}")
+        with st.spinner("📊 Loading AQI predictions (Please wait while back-end server wakes up)..."):
+            max_retries = 10
+            retry_delay = 10  # wait 10 seconds between attempts
+            success = False
+            for attempt in range(max_retries):
+                try:
+                    # We use a shorter timeout here because we are looping
+                    response = requests.get(f"{API_URL}/api/predict", timeout=15)
+                    
+                    # If Render is waking up, it often returns 502 or 503
+                    if response.status_code in [502, 503]:
+                        time.sleep(retry_delay)
+                        continue  # Try the loop again
+                        
+                    response.raise_for_status()
+                    st.session_state.predictions_data = response.json()
+                    st.session_state.last_update = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                    success = True
+                    break  # Success! Break out of the loop
+                    
+                except requests.exceptions.ConnectionError:
+                    st.error("❌ Cannot connect to prediction API. Make sure the API URL is correct.")
+                    break
+                except requests.exceptions.Timeout:
+                    # Server is still thinking/booting, wait and try again
+                    time.sleep(retry_delay)
+                except Exception as e:
+                    st.error(f"❌ Error fetching predictions: {str(e)}")
+                    break
+            
+            if not success and not st.session_state.predictions_data:
+                st.error("❌ Server took too long to wake up. Please try clicking 'Make Prediction' again.")
                 st.session_state.predictions_data = None
 
 # Display content if data is available

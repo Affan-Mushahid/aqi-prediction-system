@@ -1,0 +1,10 @@
+streamlit>=1.30.0
+pandas>=2.1.0
+numpy>=1.24.0
+requests>=2.31.0
+plotly>=5.0.0
+shap>=0.43.0
+matplotlib>=3.8.0
+fastapi>=0.95.0
+pymongo[srv]==3.12
+python-dotenv>=1.0.0
