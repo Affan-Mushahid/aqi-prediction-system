@@ -1,9 +1,6 @@
-import os
-import sys
 import requests
 import pandas as pd
 from datetime import datetime, timedelta, timezone
-from typing import Tuple, Optional
 from src.utils.process_data import prepare_data
 from src.utils.db_utils import store_engineered_features, clear_database
 

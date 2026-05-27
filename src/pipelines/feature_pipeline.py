@@ -2,7 +2,6 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-
 from src.utils.process_data import prepare_data
 from src.utils.db_utils import fetch_features, store_engineered_features
 

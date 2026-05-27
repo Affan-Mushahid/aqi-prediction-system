@@ -4,9 +4,6 @@ import numpy as np
 from typing import Optional
 from datetime import timezone
 from src.utils.db_utils import fetch_features, store_model_pickle
-from src.utils.process_data import prepare_data
-
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.svm import SVR
