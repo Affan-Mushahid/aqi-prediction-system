@@ -8,13 +8,14 @@ from plotly.subplots import make_subplots
 import shap
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta, timezone
+import os
 
 st.set_page_config(page_title="AQI Prediction Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
 st.title("🌍 Air Quality Index (AQI) Prediction Dashboard")
 
-# API URL
-API_URL = "http://localhost:8000"
+# API URL - Fetches from environment variables, defaults to localhost for local testing
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 # Color mapping for categories
 CATEGORY_COLORS = {

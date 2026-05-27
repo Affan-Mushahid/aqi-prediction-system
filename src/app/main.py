@@ -2,12 +2,24 @@ import pickle
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import numpy as np
 from src.utils.db_utils import fetch_features, load_latest_model
 from src.utils.process_data import prepare_data
 
 app = FastAPI(title="AQI Prediction API")
+
+app = FastAPI(title="AQI Prediction API")
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def get_aqi_category(aqi_value):
@@ -39,7 +51,7 @@ def forecast_96_hours(df, model, features, scaler):
     sim_df = df.copy()
 
     if not np.issubdtype(sim_df['datetime'].dtype, np.datetime64):
-        sim_df['datetime'] = pd.to_datetime(sim_df['datetime'])
+        sim_df['datetime'] = pd.to_datetime(sim_df['datetime'], utc=True).dt.tz_convert('Asia/Karachi').dt.tz_localize(None)
     sim_df = sim_df.sort_values('datetime').reset_index(drop=True)
 
     if len(sim_df) == 0:
@@ -162,7 +174,7 @@ async def predict():
         # Rename and prepare data
         if 'timestamp' in df.columns:
             df = df.rename(columns={'timestamp': 'datetime'})
-        df['datetime'] = pd.to_datetime(df['datetime'])
+        df['datetime'] = pd.to_datetime(df['datetime'], utc=True).dt.tz_convert('Asia/Karachi').dt.tz_localize(None)
         df = df.sort_values('datetime', ascending=True).reset_index(drop=True)
 
         # Verify data exists
@@ -277,7 +289,7 @@ async def shap_data():
         # Prepare data
         if 'timestamp' in df.columns:
             df = df.rename(columns={'timestamp': 'datetime'})
-        df['datetime'] = pd.to_datetime(df['datetime'])
+        df['datetime'] = pd.to_datetime(df['datetime'], utc=True).dt.tz_convert('Asia/Karachi').dt.tz_localize(None)
 
         # Get feature matrix
         X = df[features].dropna()

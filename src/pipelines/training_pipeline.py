@@ -26,6 +26,62 @@ def calculate_metrics(y_pred, y_true, model_name):
     return {'name': model_name, 'rmse': float(rmse), 'mae': float(mae), 'r2': float(r2)}
 
 
+def initialize_random_forest():
+    try:
+        return RandomForestRegressor(n_estimators=200, max_depth=15, max_features=0.7,
+                                     min_samples_split=5, min_samples_leaf=4, random_state=42, n_jobs=-1)
+    except Exception:
+        return None
+
+
+def initialize_gradient_boosting():
+    try:
+        return GradientBoostingRegressor(n_estimators=100, learning_rate=0.5, max_depth=3,
+                                         min_samples_split=15, min_samples_leaf=5, subsample=0.7,
+                                         random_state=42)
+    except Exception:
+        return None
+
+
+def initialize_xgboost():
+    if XGBRegressor is None:
+        return None
+    try:
+        return XGBRegressor(n_estimators=200, max_depth=3, learning_rate=0.05,
+                            subsample=0.8, colsample_bytree=0.7, min_child_weight=5,
+                            gamma=0.5, random_state=42, n_jobs=-1)
+    except Exception:
+        return None
+
+
+def initialize_svr():
+    try:
+        return SVR(kernel='rbf', C=10, gamma=0.001, epsilon=0.1)
+    except Exception:
+        return None
+
+
+def initialize_ridge():
+    try:
+        return Ridge(alpha=1.0)
+    except Exception:
+        return None
+
+
+def prepare_and_scale(X_train, X_test, scaler: Optional[MinMaxScaler] = None):
+    """Fit (or reuse) a scaler on X_train and transform X_train and X_test.
+
+    Returns: scaler, X_train_scaled, X_test_scaled
+    """
+    if scaler is None:
+        scaler = MinMaxScaler()
+
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    return scaler, X_train_scaled, X_test_scaled
+
+
 def training_pipeline() -> Optional[object]:
     """Fetch features from DB, train multiple regressors, pick best model and store it.
 
@@ -79,69 +135,36 @@ def training_pipeline() -> Optional[object]:
     y_train = y.iloc[:split_idx].copy()
     y_test = y.iloc[split_idx:].copy()
 
-    # Scaling
-    scaler = MinMaxScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
+    # Scale features using train/test splits (splitting preserved above)
+    scaler, X_train_scaled, X_test_scaled = prepare_and_scale(X_train, X_test)
 
     model_metrics = []
     models = {}
 
-    # 1. Random Forest
-    try:
-        rf = RandomForestRegressor(n_estimators=200, max_depth=15, max_features=0.7,
-                                   min_samples_split=5, min_samples_leaf=4, random_state=42, n_jobs=-1)
-        rf.fit(X_train_scaled, y_train)
-        rf_pred = rf.predict(X_test_scaled)
-        model_metrics.append(calculate_metrics(rf_pred, y_test, 'RandomForest'))
-        models['RandomForest'] = rf
-    except Exception:
-        pass
-
-    # 2. Gradient Boosting
-    try:
-        gb = GradientBoostingRegressor(n_estimators=100, learning_rate=0.5, max_depth=3,
-                                       min_samples_split=15, min_samples_leaf=5, subsample=0.7,
-                                       random_state=42)
-        gb.fit(X_train_scaled, y_train)
-        gb_pred = gb.predict(X_test_scaled)
-        model_metrics.append(calculate_metrics(gb_pred, y_test, 'GradientBoosting'))
-        models['GradientBoosting'] = gb
-    except Exception:
-        pass
-
-    # 3. XGBoost
-    if XGBRegressor is not None:
+    # Initialize models via per-model functions
+    for name, fn in [
+        ('RandomForest', initialize_random_forest),
+        ('GradientBoosting', initialize_gradient_boosting),
+        ('XGBoost', initialize_xgboost),
+        ('SVR', initialize_svr),
+        ('Ridge', initialize_ridge),
+    ]:
         try:
-            xgb = XGBRegressor(n_estimators=200, max_depth=3, learning_rate=0.05,
-                               subsample=0.8, colsample_bytree=0.7, min_child_weight=5,
-                               gamma=0.5, random_state=42, n_jobs=-1)
-            xgb.fit(X_train_scaled, y_train)
-            xgb_pred = xgb.predict(X_test_scaled)
-            model_metrics.append(calculate_metrics(xgb_pred, y_test, 'XGBoost'))
-            models['XGBoost'] = xgb
+            mdl = fn()
+            if mdl is not None:
+                models[name] = mdl
         except Exception:
-            pass
+            continue
 
-    # 4. SVR
-    try:
-        svr = SVR(kernel='rbf', C=10, gamma=0.001, epsilon=0.1)
-        svr.fit(X_train_scaled, y_train)
-        svr_pred = svr.predict(X_test_scaled)
-        model_metrics.append(calculate_metrics(svr_pred, y_test, 'SVR'))
-        models['SVR'] = svr
-    except Exception:
-        pass
-
-    # 5. Ridge
-    try:
-        ridge = Ridge(alpha=1.0)
-        ridge.fit(X_train_scaled, y_train)
-        ridge_pred = ridge.predict(X_test_scaled)
-        model_metrics.append(calculate_metrics(ridge_pred, y_test, 'Ridge'))
-        models['Ridge'] = ridge
-    except Exception:
-        pass
+    # Train each initialized model and collect metrics; remove models that fail to fit
+    for name, mdl in list(models.items()):
+        try:
+            mdl.fit(X_train_scaled, y_train)
+            preds = mdl.predict(X_test_scaled)
+            model_metrics.append(calculate_metrics(preds, y_test, name))
+            models[name] = mdl
+        except Exception:
+            models.pop(name, None)
 
     if not model_metrics:
         print("No models were successfully trained; aborting and returning None.")
@@ -157,6 +180,7 @@ def training_pipeline() -> Optional[object]:
     if best_model is None:
         raise ValueError("Can't select best model. No model to select")
 
+    
     # Prepare metadata: include chosen metrics and all models' metrics
     all_metrics = metrics_df.to_dict(orient='records')
     metadata = {
@@ -166,17 +190,45 @@ def training_pipeline() -> Optional[object]:
         'features': X.columns.tolist()
     }
 
-    # Serialize model + scaler together so we can reproduce preprocessing at inference
+    # Retrain selected model on the entire dataset with a fresh scaler
+    scaler = MinMaxScaler()
+    X_full_scaled = scaler.fit_transform(X)
+
+    # Re-initialize the best model (fresh instance) before fitting on full data
+    initializer_map = {
+        'RandomForest': initialize_random_forest,
+        'GradientBoosting': initialize_gradient_boosting,
+        'XGBoost': initialize_xgboost,
+        'SVR': initialize_svr,
+        'Ridge': initialize_ridge,
+    }
+    init_fn = initializer_map.get(best_name)
+    if init_fn is None:
+        raise ValueError(f"No initializer found for selected model '{best_name}'")
+    fresh_model = init_fn()
+    if fresh_model is None:
+        raise RuntimeError(f"Failed to initialize a fresh instance of selected model '{best_name}'")
+
+    try:
+        fresh_model.fit(X_full_scaled, y)
+        best_model = fresh_model
+    except Exception as e:
+        raise RuntimeError("Error retraining the selected model on full dataset") from e
+
+    # Update metadata to indicate model was retrained on full dataset
+    metadata.update({'retrained_on_full': True, 'trained_samples': int(len(X))})
+
+    # Serialize retrained model + scaler together so we can reproduce preprocessing at inference
     payload = {'model': best_model, 'scaler': scaler, 'features': X.columns.tolist()}
     try:
         model_bytes = pickle.dumps(payload)
     except Exception as e:
-        raise RuntimeError("Error while trying to pickle best model") from e
+        raise RuntimeError("Error while trying to pickle retrained best model") from e
 
     try:
         file_id = store_model_pickle(model_bytes=model_bytes, model_name=best_name, metadata=metadata)
     except Exception as e:
-        raise RuntimeError("Error while trying to store best model in DB") from e
+        raise RuntimeError("Error while trying to store retrained model in DB") from e
 
     return file_id
 
