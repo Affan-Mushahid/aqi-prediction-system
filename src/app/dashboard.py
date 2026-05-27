@@ -51,12 +51,12 @@ if st.session_state.predictions_data is None:
     with status_placeholder.container():
         with st.spinner("📊 Loading AQI predictions..."):
             try:
-                response = requests.get(f"{API_URL}/api/predict", timeout=30)
+                response = requests.get(f"{API_URL}/api/predict", timeout=180)
                 response.raise_for_status()
                 st.session_state.predictions_data = response.json()
                 st.session_state.last_update = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
             except requests.exceptions.ConnectionError:
-                st.error("❌ Cannot connect to prediction API. Make sure the FastAPI server is running on http://localhost:8000")
+                st.error("❌ Cannot connect to prediction API. Make sure the FastAPI server is running")
                 st.session_state.predictions_data = None
             except Exception as e:
                 st.error(f"❌ Error fetching predictions: {str(e)}")
