@@ -266,79 +266,27 @@ async def predict():
         raise HTTPException(status_code=500, detail=error_msg)
 
 
-@app.get("/api/shap-data")
-async def shap_data():
-    """Generate SHAP values for model explainability."""
+@app.get("/api/shap-values")
+async def shap_values():
+    """Get pre-computed SHAP values for model explainability."""
     try:
-        import shap
-
         # Load model
         payload, metadata = load_latest_model(bucket_name="models")
         if payload is None:
             raise HTTPException(status_code=404, detail="No trained model found")
 
-        model = payload['model']
-        scaler = payload['scaler']
-        features = payload['features']
+        shap_data = payload.get('shap_data')
+        if shap_data is None:
+            raise HTTPException(status_code=400, detail="SHAP data not available for current model")
 
-        # Fetch latest features for SHAP
-        df = fetch_features(days=7, collection_name='features', timestamp_field='timestamp')
-        if df.empty:
-            raise HTTPException(status_code=404, detail="No features found")
-
-        # Prepare data
-        if 'timestamp' in df.columns:
-            df = df.rename(columns={'timestamp': 'datetime'})
-        df['datetime'] = pd.to_datetime(df['datetime'], utc=True).dt.tz_convert('Asia/Karachi').dt.tz_localize(None)
-
-        # Get feature matrix
-        X = df[features].dropna()
-
-        if len(X) == 0:
-            raise HTTPException(status_code=400, detail="No valid feature data")
-
-        # Scale data
-        X_scaled = scaler.transform(X)
-
-        # Get sample (last 100 rows or less)
-        sample_size = min(100, len(X_scaled))
-        sample_idx = np.random.choice(len(X_scaled), size=sample_size, replace=False)
-        X_sample_scaled = X_scaled[sample_idx]
-
-        # Generate SHAP values using TreeExplainer
-        try:
-            explainer = shap.TreeExplainer(model)
-            shap_values = explainer.shap_values(X_sample_scaled)
-
-            # For regression, shap_values is 1D array, convert to 2D
-            if len(shap_values.shape) == 1:
-                shap_values = shap_values.reshape(-1, 1)
-
-            return {
-                "X_sample": X.iloc[sample_idx].values.tolist(),
-                "shap_values": shap_values.tolist(),
-                "feature_names": features
-            }
-        except Exception as e:
-            # Fallback to KernelExplainer if TreeExplainer fails
-            explainer = shap.KernelExplainer(model.predict, X_sample_scaled)
-            shap_values = explainer.shap_values(X_sample_scaled)
-
-            if len(shap_values.shape) == 1:
-                shap_values = shap_values.reshape(-1, 1)
-
-            return {
-                "X_sample": X.iloc[sample_idx].values.tolist(),
-                "shap_values": shap_values.tolist(),
-                "feature_names": features
-            }
+        return shap_data
 
     except HTTPException:
         raise
     except Exception as e:
         import traceback
-        print(f"SHAP error: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"SHAP generation failed: {str(e)}")
+        print(f"SHAP values error: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve SHAP values: {str(e)}")
 
 
 @app.get("/api/health")

@@ -253,8 +253,8 @@ if st.session_state.predictions_data:
 
     try:
         with st.spinner("Generating SHAP explanations..."):
-            # Fetch raw data for SHAP
-            shap_response = requests.get(f"{API_URL}/api/shap-data", timeout=30)
+            # Fetch pre-computed SHAP values
+            shap_response = requests.get(f"{API_URL}/api/shap-values", timeout=30)
             if shap_response.status_code == 200:
                 shap_data = shap_response.json()
                 X_sample = pd.DataFrame(shap_data['X_sample'])

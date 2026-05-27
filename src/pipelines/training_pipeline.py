@@ -13,6 +13,8 @@ from sklearn.svm import SVR
 from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
+import shap
+
 try:
     from xgboost import XGBRegressor
 except Exception:
@@ -80,6 +82,32 @@ def prepare_and_scale(X_train, X_test, scaler: Optional[MinMaxScaler] = None):
     X_test_scaled = scaler.transform(X_test)
 
     return scaler, X_train_scaled, X_test_scaled
+
+
+def compute_shap_values(model, X_scaled, features, sample_size=100):
+    """Compute SHAP values for model explainability using a sample of data.
+
+    Returns: {'X_sample': ndarray, 'shap_values': ndarray, 'feature_names': list}
+    """
+    sample_idx = np.random.choice(len(X_scaled), size=min(sample_size, len(X_scaled)), replace=False)
+    X_sample_scaled = X_scaled[sample_idx]
+
+    try:
+        explainer = shap.TreeExplainer(model)
+        shap_values = explainer.shap_values(X_sample_scaled)
+        if len(shap_values.shape) == 1:
+            shap_values = shap_values.reshape(-1, 1)
+    except Exception:
+        explainer = shap.KernelExplainer(model.predict, X_sample_scaled)
+        shap_values = explainer.shap_values(X_sample_scaled)
+        if len(shap_values.shape) == 1:
+            shap_values = shap_values.reshape(-1, 1)
+
+    return {
+        'X_sample': X_sample_scaled.tolist(),
+        'shap_values': shap_values.tolist(),
+        'feature_names': features
+    }
 
 
 def training_pipeline() -> Optional[object]:
@@ -215,11 +243,18 @@ def training_pipeline() -> Optional[object]:
     except Exception as e:
         raise RuntimeError("Error retraining the selected model on full dataset") from e
 
+    # Compute SHAP values on full dataset sample
+    try:
+        shap_data = compute_shap_values(best_model, X_full_scaled, X.columns.tolist())
+    except Exception as e:
+        print(f"Warning: SHAP computation failed: {e}")
+        shap_data = None
+
     # Update metadata to indicate model was retrained on full dataset
     metadata.update({'retrained_on_full': True, 'trained_samples': int(len(X))})
 
-    # Serialize retrained model + scaler together so we can reproduce preprocessing at inference
-    payload = {'model': best_model, 'scaler': scaler, 'features': X.columns.tolist()}
+    # Serialize retrained model + scaler + shap_data together
+    payload = {'model': best_model, 'scaler': scaler, 'features': X.columns.tolist(), 'shap_data': shap_data}
     try:
         model_bytes = pickle.dumps(payload)
     except Exception as e:
