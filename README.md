@@ -9,6 +9,9 @@ This project was done as part of **10Pearls Shine Program** Cohort 8.
 The AQI Prediction System leverages historical air quality data to forecast AQI values up to 3 days in advance. The system features a modern web interface, REST API backend, and automated data pipelines that continuously update predictions with the latest air quality measurements.
 
 **Live Demo:** https://aqi-prediction-system-dfl4.onrender.com/
+> [!WARNING]
+> [!WARNING]
+> In case the server does not wake up in time, for a temporary fix, visit https://aqi-backend-u599.onrender.com/api/health and let the render server start up.
 
 ## Key Features
 
@@ -102,11 +105,6 @@ Diagnostic endpoint providing information about model availability, feature data
 - **Auto-Refresh**: Responsive UI with button-triggered updates and spinner feedback during server startup
 
 ## Getting Started
-
-### Live Demo
-https://aqi-prediction-system-dfl4.onrender.com/
-
-
 
 ### Local Setup
 1. **Prerequisite**
