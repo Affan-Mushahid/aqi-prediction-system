@@ -18,6 +18,7 @@ st.title("🌍 Air Quality Index (AQI) Prediction Dashboard")
 load_dotenv()
 # API URL - Fetches from environment variables, defaults to localhost for local testing
 API_URL = os.getenv("API_URL", "http://localhost:8000")
+API_BEARER = os.getenv("API_BEARER", None)
 # Color mapping for categories
 CATEGORY_COLORS = {
     "Good": "#1f77b4",
@@ -54,13 +55,17 @@ if st.session_state.predictions_data is None:
             max_retries = 10
             retry_delay = 10  # wait 10 seconds between attempts
             success = False
+            headers = {"accept": "application/json"}
+            if(API_BEARER is not None):
+                headers["authorization"] = API_BEARER
             for attempt in range(max_retries):
                 try:
+                    
                     # We use a shorter timeout here because we are looping
-                    response = requests.get(f"{API_URL}/api/predict", timeout=15)
+                    response = requests.get(f"{API_URL}/api/predict", headers=headers,  timeout=75)
                     
                     # If Render is waking up, it often returns 502 or 503
-                    if response.status_code in [502, 503]:
+                    if response.status_code in [500, 502, 503]:
                         time.sleep(retry_delay)
                         continue  # Try the loop again
                         
