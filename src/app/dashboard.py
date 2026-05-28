@@ -17,8 +17,8 @@ st.set_page_config(page_title="AQI Prediction Dashboard", layout="wide", initial
 st.title("🌍 Air Quality Index (AQI) Prediction Dashboard")
 load_dotenv()
 # API URL - Fetches from environment variables, defaults to localhost for local testing
-API_URL = os.getenv("API_URL", "http://localhost:8000")
-API_BEARER = os.getenv("API_BEARER", None)
+API_URL = os.environ.get("API_URL", "http://localhost:8000")
+API_BEARER = os.environ.get("API_BEARER", None)
 # Color mapping for categories
 CATEGORY_COLORS = {
     "Good": "#1f77b4",
@@ -52,16 +52,18 @@ status_placeholder = st.empty()
 if st.session_state.predictions_data is None:
     with status_placeholder.container():
         with st.spinner("📊 Loading AQI predictions (Please wait while back-end server wakes up)..."):
+            if(API_URL == "http://localhost:8000"):
+                print("Could not fetch API URL, using localhost instead")
             max_retries = 10
             retry_delay = 10  # wait 10 seconds between attempts
             success = False
             headers = {"accept": "application/json"}
             if(API_BEARER is not None):
                 headers["authorization"] = API_BEARER
+            else:
+                print("Could not find API_BEARER key, using none")
             for attempt in range(max_retries):
                 try:
-                    
-                    # We use a shorter timeout here because we are looping
                     response = requests.get(f"{API_URL}/api/predict", headers=headers,  timeout=75)
                     
                     # If Render is waking up, it often returns 502 or 503
