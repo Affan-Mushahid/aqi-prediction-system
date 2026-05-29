@@ -14,7 +14,7 @@ import time
 
 st.set_page_config(page_title="AQI Prediction Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
-st.title("🌍 Air Quality Index (AQI) Prediction Dashboard")
+st.title("Air Quality Index (AQI) Prediction Dashboard")
 load_dotenv()
 # API URL - Fetches from environment variables, defaults to localhost for local testing
 API_URL = os.environ.get("API_URL", "http://localhost:8000")
@@ -98,12 +98,12 @@ if st.session_state.predictions_data:
 
     # Today's AQI Section (Predicted)
     st.markdown("---")
-    st.subheader("📍 Today's AQI (Predicted)")
+    st.subheader("Air Quality Index for Karachi")
 
     predictions = data.get('predictions', [])
     if predictions:
         today_pred = predictions[0]
-        aqi_value = today_pred.get('aqi')
+        aqi_value = round(today_pred.get('aqi'))
         category = today_pred.get('category', 'Unknown')
         color = today_pred.get('color', '#808080')
 
@@ -112,13 +112,32 @@ if st.session_state.predictions_data:
         with col1:
             st.metric(
                 label="Today's AQI",
-                value=f"{aqi_value:.1f}" if aqi_value else "N/A",
+                value=f"{aqi_value}" if aqi_value else "N/A",
                 delta=category,
                 delta_color="off"
             )
 
         with col2:
-            st.info(f"**Category:** {category}")
+            # Render category as a color-coded badge (use CATEGORY_COLORS mapping)
+            badge_color = CATEGORY_COLORS.get(category, color)
+
+            def _hex_to_rgb(h):
+                h = h.lstrip('#')
+                lv = len(h)
+                return tuple(int(h[i:i+lv//3], 16) for i in range(0, lv, lv//3))
+
+            try:
+                r, g, b = _hex_to_rgb(badge_color)
+                brightness = (r * 299 + g * 587 + b * 114) / 1000
+                text_color = '#ffffff'
+            except Exception:
+                text_color = '#ffffff'
+
+            st.markdown(
+                f"<div style='background-color:{badge_color};padding:12px;border-radius:6px;text-align:center;color:{text_color};font-weight:600;'>"
+                f"Category: {category}</div>",
+                unsafe_allow_html=True
+            )
             st.write(f"**Date:** {today_pred.get('date', 'N/A')}")
 
         with col3:
@@ -173,7 +192,7 @@ if st.session_state.predictions_data:
 
     # Last 24 Hours Data - Tabbed Variable Charts
     st.markdown("---")
-    st.subheader("📊 Last 24 Hours - Variables")
+    st.subheader("📊 Last 24 Hours Pollutants and Weather Information")
 
     hourly_data = data.get('hourly_today', [])
     if hourly_data:
