@@ -2,8 +2,7 @@ name: Training pipeline
 
 on:
   schedule:
-    # Run once per day at 00:17 UTC
-    - cron: '17 0 * * *'
+    - cron: '0 0 * * *'
   workflow_dispatch:
 
 concurrency:
