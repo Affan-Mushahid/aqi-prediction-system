@@ -2,7 +2,9 @@
 
 A machine learning system for predicting air quality trends for next 3 days in Karachi. This project involves data engineering, predictive modeling, and interactive visualization to forecast Air Quality Index values, enabling users to anticipate air quality changes and make informed decisions about outdoor activities.
 
-This project was done as part of **10Pearls Shine Program** Cohort 8.
+This project was done as part of **10Pearls Shine Internship Program** Cohort 8.
+
+The project report can be viewed [here](Project%20Report.pdf).
 
 ## Project Overview
 
@@ -170,10 +172,10 @@ Both services need to run simultaneously for the dashboard to fetch predictions 
 
 The system uses iterative multi-step forecasting:
 1. Start with the most recent historical data
-2. For each hour in the next 96 hours:
-   - Create a new row with updated cyclical features (hour, day of week, month)
+2. For each hour for the next 3 days:
+   - Create a new row with updated cyclical features.
    - Compute rolling statistics (mean, std) over appropriate windows
-   - Derive features (PM ratios, AQI change rates)
+   - Derive features
    - Feed prepared feature vector to trained model
    - Use prediction as input for next iteration
 3. Aggregate hourly predictions into daily forecasts
@@ -185,8 +187,7 @@ The system creates various features from raw air quality measurements for predic
 - **Temporal Features**: Hour/day/month encoded as sine/cosine (cyclical), rush hour indicators, workday flags
 - **Weather Components**: Wind direction convert to u and v components
 - **Rolling Statistics**: 36-hour and 72-hour rolling means/standard deviations for pollutants
-- **Derived Features**: PM2.5/PM10 ratios, AQI change rates
-- **Raw Measurements**: PM2.5, PM10, CO, NO2, SO2, O3, temperature, humidity, pressure
+- **Derived Features**: PM2.5/PM10 ratios, AQI change rates, Precipitation Likelihood, Is Rush Hour, Is Workday
 
 ## Performance
 
